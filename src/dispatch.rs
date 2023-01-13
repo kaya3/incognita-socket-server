@@ -26,8 +26,8 @@ impl std::fmt::Display for UserIdent {
 pub(crate) type Sender<T> = mpsc::UnboundedSender<T>;
 pub(crate) type Receiver<T> = mpsc::UnboundedReceiver<T>;
 
-pub(crate) async fn start_server(server: Server, port: u16) -> err::Result {
-    let server_addr = format!("127.0.0.1:{}", port);
+pub(crate) async fn start_server(server: Server, host: &str, port: u16) -> err::Result {
+    let server_addr = format!("{host}:{port}");
     let listener = TcpListener::bind(&server_addr).await?;
     println!("Listening on {server_addr}");
     

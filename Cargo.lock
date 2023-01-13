@@ -329,7 +329,7 @@ dependencies = [
 
 [[package]]
 name = "incognita-socket-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arg",
  "async-std",

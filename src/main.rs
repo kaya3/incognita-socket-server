@@ -18,5 +18,5 @@ fn main() -> err::Result {
     }
     
     let server = server::Server::new(args.max_connections);
-    async_std::task::block_on(dispatch::start_server(server, args.port))
+    async_std::task::block_on(dispatch::start_server(server, "0.0.0.0", args.port))
 }

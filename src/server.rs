@@ -59,8 +59,9 @@ impl Server {
         let all_users = room.members.into_iter()
             .chain(room.join_requests);
         
-        let owner = self.get_user_mut(room.owner_id)?;
-        owner.state = UserState::Nowhere;
+        if let Ok(owner) = self.get_user_mut(room.owner_id) {
+            owner.state = UserState::Nowhere;
+        }
         
         let mut messages = Vec::new();
         for u_id in all_users {
@@ -87,23 +88,24 @@ impl Server {
         let mut user = self.users.remove(&user_id)
             .ok_or(Error::NoSuchUser)?;
         
-        Ok(match user.state {
+        match user.state {
+            UserState::RoomOwner(room_id) => {
+                self.close_room(room_id)
+            },
             UserState::InRoom(room_id) => {
                 let room = self.get_room_mut(room_id)?;
-                if room.owner_id == user_id {
-                    self.close_room(room_id)?
-                } else {
-                    room.remove_user(user_id)?;
-                    Response::sends(room.owner_id, Message::PlayerLeft(room_id, user_id))
-                }
+                room.remove_user(user_id)?;
+                let msg = Message::PlayerLeft(room_id, user_id);
+                Ok(Response::sends(room.owner_id, msg))
             },
             UserState::RequestedJoin(room_id) => {
                 let room = self.get_room_mut(room_id)?;
                 room.cancel_join_request(&mut user)?;
-                Response::sends(room.owner_id, Message::PlayerLeft(room_id, user_id))
+                let msg = Message::PlayerLeft(room_id, user_id);
+                Ok(Response::sends(room.owner_id, msg))
             },
-            UserState::Nowhere => Response::empty(),
-        })
+            UserState::Nowhere => Ok(Response::empty(),)
+        }
     }
     
     fn list_rooms(&self) -> Response {
@@ -405,5 +407,14 @@ mod test {
         
         let expected = Response::sends(3, Message::ReceivedBroadcast(1, "whee".into()));
         assert_eq!(Ok(expected), server.echo_from(1, 1, 2, "whee".into()));
+    }
+    
+    #[test]
+    fn quit_during_game() {
+        let mut server = Server::new(4);
+        server.add_user().unwrap();
+        server.create_room(1, "hello".into()).unwrap();
+        
+        assert_eq!(Ok(Response::empty()), server.remove_user(1));
     }
 }

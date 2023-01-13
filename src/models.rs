@@ -13,6 +13,7 @@ pub(crate) struct User {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum UserState {
+    RoomOwner(RoomID),
     InRoom(RoomID),
     RequestedJoin(RoomID),
     Nowhere,
@@ -43,6 +44,7 @@ impl User {
     
     fn expect_nowhere(&self) -> Result<()> {
         match self.state {
+            UserState::RoomOwner(_) |
             UserState::InRoom(_) => Err(Error::AlreadyInARoom),
             UserState::RequestedJoin(_) => Err(Error::AlreadyRequestedJoin),
             UserState::Nowhere => Ok(()),
@@ -52,7 +54,7 @@ impl User {
     pub(crate) fn try_create_room(&mut self, room_id: RoomID, data: String) -> Result<Room> {
         self.expect_nowhere()?;
         let room = Room::new(room_id, self.id, data);
-        self.state = UserState::InRoom(room_id);
+        self.state = UserState::RoomOwner(room_id);
         Ok(room)
     }
     
@@ -65,21 +67,22 @@ impl User {
     
     pub(crate) fn leave_room(&mut self, room: &mut Room) -> Result<()> {
         match self.state {
+            UserState::RoomOwner(_) => {
+                Err(Error::IsRoomOwner)
+            },
             UserState::InRoom(room_id) => {
-                if room_id != room.id {
-                    Err(Error::NotInThatRoom)
-                } else if room.owner_id == self.id {
-                    Err(Error::IsRoomOwner)
-                } else {
+                if room_id == room.id {
                     self.state = UserState::Nowhere;
                     room.remove_user(self.id)
+                } else {
+                    Err(Error::NotInThatRoom)
                 }
             },
             UserState::RequestedJoin(room_id) => {
-                if room_id != room.id {
-                    Err(Error::NotInThatRoom)
-                } else {
+                if room_id == room.id {
                     room.cancel_join_request(self)
+                } else {
+                    Err(Error::NotInThatRoom)
                 }
             },
             UserState::Nowhere => {
