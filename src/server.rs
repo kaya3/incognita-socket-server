@@ -410,11 +410,24 @@ mod test {
     }
     
     #[test]
-    fn quit_during_game() {
+    fn owner_quit_during_game() {
         let mut server = Server::new(4);
         server.add_user().unwrap();
         server.create_room(1, "hello".into()).unwrap();
         
         assert_eq!(Ok(Response::empty()), server.remove_user(1));
+    }
+    
+    #[test]
+    fn member_quit_during_game() {
+        let mut server = Server::new(4);
+        server.add_user().unwrap();
+        server.add_user().unwrap();
+        server.create_room(1, "hello".into()).unwrap();
+        server.ask_join(2, 1, "please".into()).unwrap();
+        server.accept_join(1, 1, 2).unwrap();
+        
+        let expected = Response::sends(1, Message::PlayerLeft(1, 2));
+        assert_eq!(Ok(expected), server.remove_user(2));
     }
 }

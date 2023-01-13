@@ -85,8 +85,9 @@ impl Dispatcher {
         Some((user_id, receiver))
     }
     
-    fn remove_user(&mut self, user_id: UserID) -> err::Result {
-        self.server.remove_user(user_id)?;
+    async fn remove_user(&mut self, user_id: UserID) -> err::Result {
+        let r = self.server.remove_user(user_id)?;
+        self.dispatch_response(user_id, r).await;
         self.conns.remove(&user_id);
         Ok(())
     }
@@ -136,7 +137,7 @@ impl Dispatcher {
                     self.dispatch_response(user_id, response).await;
                 },
                 Event::Disconnected(user_id, _) => {
-                    self.remove_user(user_id)?;
+                    self.remove_user(user_id).await?;
                 },
             }
         }
