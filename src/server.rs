@@ -199,6 +199,9 @@ impl Server {
             Request::ListRooms => {
                 self.list_rooms()
             },
+            Request::Ping(sequence_number) => {
+                Response::returns(Message::Pong(sequence_number))
+            },
             Request::CreateRoom(data) => {
                 self.create_room(user_id, data).into()
             },
@@ -242,6 +245,16 @@ mod test {
     fn add_user() {
         let mut server = Server::new(4);
         assert_eq!(Some(1), server.add_user());
+    }
+    
+    #[test]
+    fn ping() {
+        let mut server = Server::new(4);
+        server.add_user().unwrap();
+        
+        let request = Request::Ping(23);
+        let expected = Response::returns(Message::Pong(23));
+        assert_eq!(expected, server.handle_request(1, request));
     }
     
     #[test]

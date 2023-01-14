@@ -3,6 +3,7 @@ use crate::models::{UserID, RoomID};
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Request {
     ListRooms,
+    Ping(u32),
     CreateRoom(String),
     AskJoinRoom(RoomID, String),
     AcceptJoinRoom(RoomID, UserID),
@@ -50,6 +51,10 @@ pub(crate) fn parse(s: &str) -> Option<Request> {
     match parts.take_str()? {
         "LIST_OPEN_GAMES" => {
             parts.done(|| Request::ListRooms)
+        },
+        "PING" => {
+            let sequence_number = parts.take_int()?;
+            parts.done(|| Request::Ping(sequence_number))
         },
         "CREATE_GAME" => {
             let data = parts.take_string()?;
@@ -107,6 +112,12 @@ mod test {
     fn list_rooms() {
         let r = parse("LIST_OPEN_GAMES").unwrap();
         assert_eq!(Request::ListRooms, r);
+    }
+    
+    #[test]
+    fn ping() {
+        let r = parse("PING|23").unwrap();
+        assert_eq!(Request::Ping(23), r);
     }
     
     #[test]

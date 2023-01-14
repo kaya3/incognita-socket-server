@@ -69,6 +69,7 @@ impl FromIterator<(UserID, Message)> for Response {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Message {
     Welcome(UserID),
+    Pong(u32),
     ListRooms(Vec<(RoomID, Arc<str>)>),
     RoomCreated(RoomID),
     RoomJoined(RoomID),
@@ -117,6 +118,9 @@ impl std::fmt::Display for Message {
         match self {
             Message::Welcome(user_id) => {
                 write!(f, "WELCOME|{user_id}")
+            },
+            Message::Pong(sequence_number) => {
+                write!(f, "PONG|{sequence_number}")
             },
             Message::ListRooms(rooms) => if rooms.is_empty() {
                 write!(f, "NO_OPEN_GAMES")
