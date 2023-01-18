@@ -5,6 +5,7 @@ pub(crate) enum Request {
     ListRooms,
     Ping(u32),
     CreateRoom(String),
+    SetOwner(RoomID, UserID),
     AskJoinRoom(RoomID, String),
     AcceptJoinRoom(RoomID, UserID),
     RejectJoinRoom(RoomID, UserID, String),
@@ -59,6 +60,11 @@ pub(crate) fn parse(s: &str) -> Option<Request> {
         "CREATE_GAME" => {
             let data = parts.take_string()?;
             parts.done(|| Request::CreateRoom(data))
+        },
+        "SET_OWNER" => {
+            let room_id = parts.take_int()?;
+            let other_id = parts.take_int()?;
+            parts.done(|| Request::SetOwner(room_id, other_id))
         },
         "JOIN_GAME" => {
             let room_id = parts.take_int()?;
@@ -124,6 +130,12 @@ mod test {
     fn create_room() {
         let r = parse("CREATE_GAME|hello").unwrap();
         assert_eq!(Request::CreateRoom("hello".into()), r);
+    }
+    
+    #[test]
+    fn set_owner() {
+        let r = parse("SET_OWNER|1|2").unwrap();
+        assert_eq!(Request::SetOwner(1, 2), r);
     }
     
     #[test]

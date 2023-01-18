@@ -11,7 +11,7 @@ pub(crate) struct User {
     pub(crate) state: UserState,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum UserState {
     RoomOwner(RoomID),
     InRoom(RoomID),
@@ -119,11 +119,15 @@ impl Room {
         }
     }
     
+    pub(crate) fn set_owner(&mut self, user: &mut User) -> Result<()> {
+        let index = index_of(&self.members, user.id, Error::NoSuchUser)?;
+        std::mem::swap(&mut self.members[index], &mut self.owner_id);
+        user.state = UserState::RoomOwner(self.id);
+        Ok(())
+    }
+    
     pub(crate) fn cancel_join_request(&mut self, user: &mut User) -> Result<()> {
-        let index = self.join_requests.iter()
-            .position(|&u_id| u_id == user.id)
-            .ok_or(Error::NoSuchJoinRequest)?;
-        
+        let index = index_of(&self.join_requests, user.id, Error::NoSuchJoinRequest)?;
         self.join_requests.swap_remove(index);
         user.state = UserState::Nowhere;
         Ok(())
@@ -142,11 +146,14 @@ impl Room {
             return Err(Error::IsRoomOwner);
         }
         
-        let index = self.members.iter()
-            .position(|&u_id| u_id == user_id)
-            .ok_or(Error::NoSuchUser)?;
-        
+        let index = index_of(&self.members, user_id, Error::NoSuchUser)?;
         self.members.swap_remove(index);
         Ok(())
     }
+}
+
+fn index_of<T: Eq>(arr: &[T], v: T, e: Error) -> Result<usize> {
+    arr.iter()
+        .position(|t| *t == v)
+        .ok_or(e)
 }

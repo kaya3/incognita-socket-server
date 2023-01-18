@@ -30,6 +30,11 @@ impl Server {
         }
     }
     
+    fn get_user(&self, user_id: UserID) -> Result<&User> {
+        self.users.get(&user_id)
+            .ok_or(Error::NoSuchUser)
+    }
+    
     fn get_user_mut(&mut self, user_id: UserID) -> Result<&mut User> {
         self.users.get_mut(&user_id)
             .ok_or(Error::NoSuchUser)
@@ -125,6 +130,22 @@ impl Server {
         Ok(Message::RoomCreated(room_id).into())
     }
     
+    fn set_owner(&mut self, user_id: UserID, room_id: RoomID, other_id: UserID) -> Result {
+        let (other, room) = self.get_user_room_mut(other_id, room_id)?;
+        room.expect_owner(user_id)?;
+        
+        // build response before changing members, so that the right members get the message
+        let response: Vec<_> = room.members.iter()
+            .copied()
+            .map(|u_id| (u_id, Message::ChangedOwner(room_id, other_id)))
+            .collect();
+        
+        room.set_owner(other)?;
+        let user = self.get_user_mut(user_id).unwrap();
+        user.state = UserState::InRoom(room_id);
+        Ok(Response::sends_all(response))
+    }
+    
     fn ask_join(&mut self, user_id: UserID, room_id: RoomID, msg: String) -> Result {
         let (user, room) = self.get_user_room_mut(user_id, room_id)?;
         user.try_join_room(room)?;
@@ -205,6 +226,9 @@ impl Server {
             Request::CreateRoom(data) => {
                 self.create_room(user_id, data).into()
             },
+            Request::SetOwner(room_id, other_id) => {
+                self.set_owner(user_id, room_id, other_id).into()
+            },
             Request::AskJoinRoom(room_id, msg) => {
                 self.ask_join(user_id, room_id, msg).into()
             },
@@ -241,10 +265,18 @@ mod test {
         Ok(t.into())
     }
     
+    impl Server {
+        fn assert_state(&self, user_id: UserID, expected: UserState) {
+            let user = self.get_user(user_id).unwrap();
+            assert_eq!(user.state, expected);
+        }
+    }
+    
     #[test]
     fn add_user() {
         let mut server = Server::new(4);
         assert_eq!(Some(1), server.add_user());
+        server.assert_state(1, UserState::Nowhere);
     }
     
     #[test]
@@ -262,6 +294,7 @@ mod test {
         let mut server = Server::new(4);
         assert_eq!(Some(1), server.add_user());
         assert_eq!(Ok(Response::empty()), server.remove_user(1));
+        assert_eq!(Error::NoSuchUser, server.get_user(1).unwrap_err());
     }
     
     #[test]
@@ -279,6 +312,7 @@ mod test {
         let mut server = Server::new(4);
         server.add_user().unwrap();
         assert_eq!(ok(Message::RoomCreated(1)), server.create_room(1, "hello".into()));
+        server.assert_state(1, UserState::RoomOwner(1));
     }
     
     #[test]
@@ -288,7 +322,9 @@ mod test {
         server.add_user().unwrap();
         
         assert_eq!(ok(Message::RoomCreated(1)), server.create_room(2, "hello".into()));
+        server.assert_state(2, UserState::RoomOwner(1));
         assert_eq!(ok(Message::RoomCreated(2)), server.create_room(1, "world".into()));
+        server.assert_state(1, UserState::RoomOwner(2));
         
         let expected: Response = Message::ListRooms(vec![
             (1, "hello".into()),
@@ -306,6 +342,7 @@ mod test {
         
         let expected = Response::sends(1, Message::JoinRequested(1, 2, "please".into()));
         assert_eq!(Ok(expected), server.ask_join(2, 1, "please".into()));
+        server.assert_state(2, UserState::RequestedJoin(1));
     }
     
     #[test]
@@ -316,8 +353,11 @@ mod test {
         server.create_room(1, "hello".into()).unwrap();
         server.ask_join(2, 1, "please".into()).unwrap();
         
+        server.assert_state(2, UserState::RequestedJoin(1));
+        
         let expected = Response::sends(2, Message::RoomJoined(1));
         assert_eq!(Ok(expected), server.accept_join(1, 1, 2));
+        server.assert_state(2, UserState::InRoom(1));
     }
     
     #[test]
@@ -328,8 +368,11 @@ mod test {
         server.create_room(1, "hello".into()).unwrap();
         server.ask_join(2, 1, "please".into()).unwrap();
         
+        server.assert_state(2, UserState::RequestedJoin(1));
+        
         let expected = Response::sends(2, Message::RoomRejected(1, "no".into()));
         assert_eq!(Ok(expected), server.reject_join(1, 1, 2, "no".into()));
+        server.assert_state(2, UserState::Nowhere);
     }
     
     #[test]
@@ -341,8 +384,37 @@ mod test {
         server.ask_join(2, 1, "please".into()).unwrap();
         server.accept_join(1, 1, 2).unwrap();
         
+        server.assert_state(2, UserState::InRoom(1));
+        
         let expected = Response::sends(1, Message::PlayerLeft(1, 2));
         assert_eq!(Ok(expected), server.leave_room(2, 1));
+        server.assert_state(2, UserState::Nowhere);
+    }
+    
+    #[test]
+    fn set_owner() {
+        let mut server = Server::new(4);
+        server.add_user().unwrap();
+        server.add_user().unwrap();
+        server.add_user().unwrap();
+        server.create_room(1, "hello".into()).unwrap();
+        server.ask_join(2, 1, "please".into()).unwrap();
+        server.ask_join(3, 1, "please".into()).unwrap();
+        server.accept_join(1, 1, 2).unwrap();
+        server.accept_join(1, 1, 3).unwrap();
+        
+        server.assert_state(1, UserState::RoomOwner(1));
+        server.assert_state(2, UserState::InRoom(1));
+        server.assert_state(3, UserState::InRoom(1));
+        
+        let expected = Response::sends_all([
+            (2, Message::ChangedOwner(1, 2)),
+            (3, Message::ChangedOwner(1, 2)),
+        ]);
+        assert_eq!(Ok(expected), server.set_owner(1, 1, 2).map(Response::canonical));
+        server.assert_state(1, UserState::InRoom(1));
+        server.assert_state(2, UserState::RoomOwner(1));
+        server.assert_state(3, UserState::InRoom(1));
     }
     
     #[test]
@@ -354,8 +426,13 @@ mod test {
         server.ask_join(2, 1, "please".into()).unwrap();
         server.accept_join(1, 1, 2).unwrap();
         
+        server.assert_state(1, UserState::RoomOwner(1));
+        server.assert_state(2, UserState::InRoom(1));
+        
         let expected = Response::sends(2, Message::RoomClosed(1));
         assert_eq!(Ok(expected), server.leave_room(1, 1));
+        server.assert_state(1, UserState::Nowhere);
+        server.assert_state(2, UserState::Nowhere);
     }
     
     #[test]
@@ -428,7 +505,10 @@ mod test {
         server.add_user().unwrap();
         server.create_room(1, "hello".into()).unwrap();
         
+        server.assert_state(1, UserState::RoomOwner(1));
+        
         assert_eq!(Ok(Response::empty()), server.remove_user(1));
+        assert_eq!(Error::NoSuchUser, server.get_user(1).unwrap_err());
     }
     
     #[test]
@@ -440,7 +520,11 @@ mod test {
         server.ask_join(2, 1, "please".into()).unwrap();
         server.accept_join(1, 1, 2).unwrap();
         
+        server.assert_state(1, UserState::RoomOwner(1));
+        server.assert_state(2, UserState::InRoom(1));
+        
         let expected = Response::sends(1, Message::PlayerLeft(1, 2));
         assert_eq!(Ok(expected), server.remove_user(2));
+        assert_eq!(Error::NoSuchUser, server.get_user(2).unwrap_err());
     }
 }

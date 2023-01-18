@@ -74,6 +74,7 @@ pub(crate) enum Message {
     RoomCreated(RoomID),
     RoomJoined(RoomID),
     RoomClosed(RoomID),
+    ChangedOwner(RoomID, UserID),
     RoomRejected(RoomID, String),
     JoinRequested(RoomID, UserID, String),
     PlayerLeft(RoomID, UserID),
@@ -133,6 +134,9 @@ impl std::fmt::Display for Message {
             },
             Message::RoomCreated(room_id) => {
                 write!(f, "CREATED_GAME|{room_id}")
+            },
+            Message::ChangedOwner(room_id, user_id) => {
+                write!(f, "CHANGED_OWNER|{room_id}|{user_id}")
             },
             Message::RoomJoined(room_id) => {
                 write!(f, "JOINED|{room_id}")
