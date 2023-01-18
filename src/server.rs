@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::models::{UserID, RoomID, User, Room, UserState};
 use crate::request::Request;
 use crate::response::{Error, Message, Response, Result};
-use crate::models::{UserID, RoomID, User, Room, UserState};
 
 fn next_id<T>(last_id: u32, map: &HashMap<u32, T>) -> u32 {
     let mut id = last_id;
@@ -30,6 +30,7 @@ impl Server {
         }
     }
     
+    #[cfg(test)]
     fn get_user(&self, user_id: UserID) -> Result<&User> {
         self.users.get(&user_id)
             .ok_or(Error::NoSuchUser)
@@ -205,7 +206,9 @@ impl Server {
     fn echo_from(&self, user_id: UserID, room_id: RoomID, from_user_id: UserID, payload: String) -> Result {
         let room = self.get_room(room_id)?;
         room.expect_owner(user_id)?;
-        room.expect_member(from_user_id)?;
+        
+        // allow echoing messages from a user who has already left
+        //room.expect_member(from_user_id)?;
         
         let payload: Arc<str> = Arc::from(payload);
         Ok(room.members.iter()
